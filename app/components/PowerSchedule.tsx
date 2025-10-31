@@ -8,6 +8,7 @@ export default function PowerSchedule() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const [notificationStatus, setNotificationStatus] = useState<'default' | 'granted' | 'denied'>('default');
 
   const fetchSchedule = async () => {
     try {
@@ -42,12 +43,19 @@ export default function PowerSchedule() {
     fetchSchedule();
     // Оновлюємо кожні 10 хвилин
     const interval = setInterval(fetchSchedule, 10 * 60 * 1000);
+
+    // Перевіряємо статус сповіщень
+    if ('Notification' in window) {
+      setNotificationStatus(Notification.permission as 'default' | 'granted' | 'denied');
+    }
+
     return () => clearInterval(interval);
   }, []);
 
   const requestNotificationPermission = async () => {
     if ('Notification' in window && Notification.permission === 'default') {
       const permission = await Notification.requestPermission();
+      setNotificationStatus(permission as 'default' | 'granted' | 'denied');
       if (permission === 'granted') {
         new Notification('Сповіщення увімкнені! ✅', {
           body: 'Тепер ви отримуватимете повідомлення про зміни графіка',
@@ -55,6 +63,8 @@ export default function PowerSchedule() {
           badge: '/icon-192x192.png',
         });
       }
+    } else if ('Notification' in window && Notification.permission === 'denied') {
+      alert('❌ Сповіщення заблоковані.\n\n1. Натисніть на іконку замка 🔒 в адресному рядку\n2. Знайдіть "Сповіщення"\n3. Змініть на "Дозволити"\n4. Перезавантажте сторінку');
     }
   };
 
@@ -132,9 +142,19 @@ export default function PowerSchedule() {
           <div className="flex gap-2 sm:gap-4 mb-3 sm:mb-4 flex-col sm:flex-row">
             <button
               onClick={requestNotificationPermission}
-              className="bg-blue-600 text-white px-4 py-3 sm:py-2 rounded-lg hover:bg-blue-700 transition shadow-md font-medium text-sm sm:text-base"
+              className={`${
+                notificationStatus === 'granted'
+                  ? 'bg-green-600 hover:bg-green-700'
+                  : notificationStatus === 'denied'
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              } text-white px-4 py-3 sm:py-2 rounded-lg transition shadow-md font-medium text-sm sm:text-base`}
             >
-              🔔 Увімкнути сповіщення
+              {notificationStatus === 'granted'
+                ? '✅ Сповіщення увімкнені'
+                : notificationStatus === 'denied'
+                ? '❌ Сповіщення заблоковані'
+                : '🔔 Увімкнути сповіщення'}
             </button>
             <button
               onClick={fetchSchedule}
@@ -241,22 +261,44 @@ export default function PowerSchedule() {
         </div>
 
         {/* Тестова кнопка для сповіщень */}
-        <div className="mt-4 sm:mt-6 bg-white p-3 sm:p-4 rounded-lg shadow-md border-2 border-purple-200">
+        <div className={`mt-4 sm:mt-6 bg-white p-3 sm:p-4 rounded-lg shadow-md border-2 ${
+          notificationStatus === 'granted' ? 'border-green-300' : 'border-purple-200'
+        }`}>
           <h3 className="text-base sm:text-lg font-bold mb-2 text-gray-800 flex items-center gap-2">
             <span className="text-2xl">🧪</span> Перевірка сповіщень
           </h3>
-          <p className="text-xs sm:text-sm text-gray-600 mb-3">
-            Натисніть кнопку нижче, щоб перевірити чи працюють сповіщення на вашому пристрої
-          </p>
-          <button
-            onClick={testNotification}
-            className="w-full bg-purple-600 text-white px-4 py-3 sm:py-2 rounded-lg hover:bg-purple-700 transition shadow-md font-medium text-sm sm:text-base"
-          >
-            🔔 Надіслати тестове сповіщення
-          </button>
-          <p className="text-xs text-gray-500 mt-2 text-center">
-            Спочатку увімкніть сповіщення кнопкою вище ↑
-          </p>
+
+          {notificationStatus === 'granted' ? (
+            <>
+              <p className="text-xs sm:text-sm text-gray-600 mb-3">
+                ✅ Сповіщення увімкнені! Натисніть кнопку нижче для тесту:
+              </p>
+              <button
+                onClick={testNotification}
+                className="w-full bg-purple-600 text-white px-4 py-3 sm:py-2 rounded-lg hover:bg-purple-700 transition shadow-md font-medium text-sm sm:text-base"
+              >
+                🔔 Надіслати тестове сповіщення
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-xs sm:text-sm text-gray-600 mb-3">
+                ⚠️ Щоб перевірити сповіщення:
+              </p>
+              <ol className="text-xs sm:text-sm text-gray-600 mb-3 ml-4 space-y-1 list-decimal">
+                <li>Натисніть кнопку <strong>"🔔 Увімкнути сповіщення"</strong> вгорі</li>
+                <li>Дозвольте сповіщення в діалозі браузера</li>
+                <li>Потім повертайтесь сюди і натискайте тестову кнопку</li>
+              </ol>
+              <button
+                onClick={testNotification}
+                className="w-full bg-gray-400 text-white px-4 py-3 sm:py-2 rounded-lg cursor-not-allowed shadow-md font-medium text-sm sm:text-base"
+                disabled
+              >
+                🔔 Спочатку увімкніть сповіщення ↑
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
