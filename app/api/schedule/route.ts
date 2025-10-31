@@ -21,14 +21,66 @@ export interface ScheduleData {
   rawHtml: string;
 }
 
+// Fallback дані на випадок недоступності серверу
+function getFallbackData(): ScheduleData {
+  const today = new Date();
+  const dateStr = today.toLocaleDateString('uk-UA', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  }) + ' року';
+
+  return {
+    date: dateStr,
+    description: 'Не вдалося завантажити актуальний графік з poe.pl.ua. Показані тестові дані.',
+    timeSlots: [
+      { start: '00:00', end: '06:00', queues: 1 },
+      { start: '06:00', end: '12:00', queues: 0.5 },
+      { start: '12:00', end: '18:00', queues: 1 },
+      { start: '18:00', end: '24:00', queues: 0.5 },
+    ],
+    queueSchedules: [
+      {
+        queue: 1,
+        subqueue: 1,
+        hours: Array(48).fill('light_1').map((_, i) =>
+          i >= 0 && i < 12 ? 'light_2' : 'light_1'
+        ),
+      },
+      {
+        queue: 1,
+        subqueue: 2,
+        hours: Array(48).fill('light_1').map((_, i) =>
+          i >= 24 && i < 36 ? 'light_2' : 'light_1'
+        ),
+      },
+    ],
+    rawHtml: '',
+  };
+}
+
 export async function GET() {
   try {
+    // Створюємо контролер для timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 секунд timeout
+
     const response = await fetch('https://www.poe.pl.ua/customs/dynamicgpv-info.php', {
       cache: 'no-store',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'uk-UA,uk;q=0.9,en;q=0.8',
+        'Referer': 'https://www.poe.pl.ua/',
+      },
     });
 
+    clearTimeout(timeoutId);
+
     if (!response.ok) {
-      throw new Error('Failed to fetch schedule');
+      console.error('Fetch failed with status:', response.status);
+      throw new Error(`Failed to fetch schedule: ${response.status} ${response.statusText}`);
     }
 
     const html = await response.text();
@@ -93,8 +145,13 @@ export async function GET() {
     return NextResponse.json(data);
   } catch (error) {
     console.error('Error fetching schedule:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: 'Failed to fetch schedule' },
+      {
+        error: 'Failed to fetch schedule',
+        details: errorMessage,
+        timestamp: new Date().toISOString(),
+      },
       { status: 500 }
     );
   }
