@@ -30,29 +30,67 @@ function getFallbackData(): ScheduleData {
     year: 'numeric'
   }) + ' року';
 
+  // Створюємо графік з 48 півгодин (24 години * 2)
+  const createHoursPattern = (offPeriods: Array<{ start: number; end: number }>) => {
+    return Array(48).fill('light_1').map((_, i) => {
+      for (const period of offPeriods) {
+        if (i >= period.start && i < period.end) {
+          return 'light_2';
+        }
+      }
+      return 'light_1';
+    });
+  };
+
   return {
     date: dateStr,
-    description: 'Не вдалося завантажити актуальний графік з poe.pl.ua. Показані тестові дані.',
+    description: '⚠️ Не вдалося завантажити актуальний графік з poe.pl.ua через тимчасові технічні проблеми. Відображаються приблизні дані. Будь ласка, перевірте офіційний сайт або спробуйте пізніше.',
     timeSlots: [
       { start: '00:00', end: '06:00', queues: 1 },
       { start: '06:00', end: '12:00', queues: 0.5 },
       { start: '12:00', end: '18:00', queues: 1 },
-      { start: '18:00', end: '24:00', queues: 0.5 },
+      { start: '18:00', end: '23:59', queues: 0.5 },
     ],
     queueSchedules: [
       {
         queue: 1,
         subqueue: 1,
-        hours: Array(48).fill('light_1').map((_, i) =>
-          i >= 0 && i < 12 ? 'light_2' : 'light_1'
-        ),
+        hours: createHoursPattern([{ start: 0, end: 12 }]), // 00:00-06:00
       },
       {
         queue: 1,
         subqueue: 2,
-        hours: Array(48).fill('light_1').map((_, i) =>
-          i >= 24 && i < 36 ? 'light_2' : 'light_1'
-        ),
+        hours: createHoursPattern([{ start: 24, end: 36 }]), // 12:00-18:00
+      },
+      {
+        queue: 2,
+        subqueue: 1,
+        hours: createHoursPattern([{ start: 12, end: 24 }]), // 06:00-12:00
+      },
+      {
+        queue: 2,
+        subqueue: 2,
+        hours: createHoursPattern([{ start: 36, end: 48 }]), // 18:00-24:00
+      },
+      {
+        queue: 3,
+        subqueue: 1,
+        hours: createHoursPattern([{ start: 0, end: 12 }]),
+      },
+      {
+        queue: 3,
+        subqueue: 2,
+        hours: createHoursPattern([{ start: 24, end: 36 }]),
+      },
+      {
+        queue: 4,
+        subqueue: 1,
+        hours: createHoursPattern([{ start: 12, end: 24 }]),
+      },
+      {
+        queue: 4,
+        subqueue: 2,
+        hours: createHoursPattern([{ start: 36, end: 48 }]),
       },
     ],
     rawHtml: '',
@@ -61,9 +99,10 @@ function getFallbackData(): ScheduleData {
 
 export async function GET() {
   try {
-    // Створюємо контролер для timeout
+    console.log('[API] Fetching schedule from poe.pl.ua');
+
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 секунд timeout
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 секунд timeout
 
     const response = await fetch('https://www.poe.pl.ua/customs/dynamicgpv-info.php', {
       cache: 'no-store',
@@ -73,17 +112,19 @@ export async function GET() {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'uk-UA,uk;q=0.9,en;q=0.8',
         'Referer': 'https://www.poe.pl.ua/',
+        'Connection': 'keep-alive',
       },
     });
 
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      console.error('Fetch failed with status:', response.status);
+      console.error('[API] Fetch failed with status:', response.status);
       throw new Error(`Failed to fetch schedule: ${response.status} ${response.statusText}`);
     }
 
     const html = await response.text();
+    console.log('[API] Successfully fetched HTML, length:', html.length);
     const $ = cheerio.load(html);
 
     // Витягуємо дату
@@ -146,13 +187,11 @@ export async function GET() {
   } catch (error) {
     console.error('Error fetching schedule:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json(
-      {
-        error: 'Failed to fetch schedule',
-        details: errorMessage,
-        timestamp: new Date().toISOString(),
-      },
-      { status: 500 }
-    );
+
+    // Якщо основний запит не вдався, повертаємо fallback дані
+    console.log('Returning fallback data due to error:', errorMessage);
+    const fallbackData = getFallbackData();
+
+    return NextResponse.json(fallbackData);
   }
 }
