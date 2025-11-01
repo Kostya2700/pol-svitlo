@@ -114,7 +114,6 @@ self.addEventListener('push', (event) => {
     body: data.body || 'Перевірте новий графік відключень електроенергії',
     icon: '/icon-192x192.png',
     badge: '/icon-192x192.png',
-    vibrate: [200, 100, 200],
     requireInteraction: false,
     data: {
       url: data.url || '/',
