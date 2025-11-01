@@ -97,25 +97,71 @@ function getFallbackData(): ScheduleData {
   };
 }
 
+async function fetchWithFallback(url: string, options: RequestInit, signal: AbortSignal) {
+  // Спроба 1: Прямий запит
+  try {
+    console.log('[API] Trying direct fetch...');
+    const response = await fetch(url, { ...options, signal });
+    if (response.ok) {
+      console.log('[API] Direct fetch successful');
+      return response;
+    }
+    console.log('[API] Direct fetch failed with status:', response.status);
+  } catch (err) {
+    console.log('[API] Direct fetch error:', err instanceof Error ? err.message : 'Unknown');
+  }
+
+  // Спроба 2: Через allorigins.win
+  try {
+    console.log('[API] Trying allorigins.win proxy...');
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+    const response = await fetch(proxyUrl, { signal });
+    if (response.ok) {
+      console.log('[API] allorigins.win proxy successful');
+      return response;
+    }
+    console.log('[API] allorigins.win proxy failed with status:', response.status);
+  } catch (err) {
+    console.log('[API] allorigins.win proxy error:', err instanceof Error ? err.message : 'Unknown');
+  }
+
+  // Спроба 3: Через corsproxy.io
+  try {
+    console.log('[API] Trying corsproxy.io proxy...');
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+    const response = await fetch(proxyUrl, { signal });
+    if (response.ok) {
+      console.log('[API] corsproxy.io proxy successful');
+      return response;
+    }
+    console.log('[API] corsproxy.io proxy failed with status:', response.status);
+  } catch (err) {
+    console.log('[API] corsproxy.io proxy error:', err instanceof Error ? err.message : 'Unknown');
+  }
+
+  throw new Error('All fetch attempts failed (direct + 2 proxies)');
+}
+
 export async function GET() {
   try {
     console.log('[API] Fetching schedule from poe.pl.ua');
+    console.log('[API] Environment:', process.env.VERCEL ? 'Vercel' : 'Local');
+    console.log('[API] Vercel Region:', process.env.VERCEL_REGION || 'N/A');
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 секунд timeout
+    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 секунд для всіх спроб
 
-    const response = await fetch('https://www.poe.pl.ua/customs/dynamicgpv-info.php', {
+    const url = 'https://www.poe.pl.ua/customs/dynamicgpv-info.php';
+    const options: RequestInit = {
       cache: 'no-store',
-      signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'uk-UA,uk;q=0.9,en;q=0.8',
-        'Referer': 'https://www.poe.pl.ua/',
-        'Connection': 'keep-alive',
       },
-    });
+    };
 
+    const response = await fetchWithFallback(url, options, controller.signal);
     clearTimeout(timeoutId);
 
     if (!response.ok) {
@@ -185,13 +231,30 @@ export async function GET() {
 
     return NextResponse.json(data);
   } catch (error) {
-    console.error('Error fetching schedule:', error);
+    console.error('[API] Error fetching schedule:', error);
+
+    // Детальне логування помилки
+    if (error instanceof Error) {
+      console.error('[API] Error name:', error.name);
+      console.error('[API] Error message:', error.message);
+      console.error('[API] Error stack:', error.stack);
+    }
+
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
     // Якщо основний запит не вдався, повертаємо fallback дані
-    console.log('Returning fallback data due to error:', errorMessage);
+    console.log('[API] Returning fallback data due to error:', errorMessage);
     const fallbackData = getFallbackData();
 
-    return NextResponse.json(fallbackData);
+    // Додаємо інформацію про помилку в fallback дані
+    fallbackData.description = `⚠️ Не вдалося завантажити актуальний графік з poe.pl.ua.\n\nПричина: ${errorMessage}\n\nВідображаються приблизні дані. Будь ласка, перевірте офіційний сайт: https://www.poe.pl.ua/`;
+
+    return NextResponse.json(fallbackData, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      }
+    });
   }
 }

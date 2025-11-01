@@ -189,8 +189,20 @@ node scripts/generate-icons.js
 ### Vercel (рекомендовано)
 ```bash
 npm install -g vercel
-vercel
+vercel login
+vercel --prod
 ```
+
+**Важливо:** Після деплою перевірте логи в Vercel Dashboard щоб переконатись що API працює. Детальна інструкція в [DEPLOYMENT.md](DEPLOYMENT.md).
+
+### API Fallback механізм
+
+API автоматично використовує 3 способи завантаження даних:
+1. Прямий запит до poe.pl.ua
+2. Proxy через allorigins.win (якщо прямий не працює)
+3. Proxy через corsproxy.io (якщо обидва не працюють)
+
+Це значно підвищує надійність на Vercel! Детальніше в [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Troubleshooting
 
