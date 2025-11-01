@@ -1,4 +1,4 @@
-const CACHE_NAME = 'power-schedule-v1';
+const CACHE_NAME = 'power-schedule-v2';
 const urlsToCache = [
   '/',
   '/manifest.json',
@@ -32,8 +32,10 @@ self.addEventListener('activate', (event) => {
 
 // Обробка запитів
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
   // Для API запитів завжди використовуємо мережу
-  if (event.request.url.includes('/api/')) {
+  if (url.pathname.includes('/api/')) {
     event.respondWith(
       fetch(event.request).catch(() => {
         return new Response(JSON.stringify({ error: 'Offline' }), {
@@ -44,15 +46,39 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Для інших запитів використовуємо стратегію Network First
+  // Для JavaScript файлів завжди використовуємо мережу (Network First)
+  if (url.pathname.endsWith('.js') || url.pathname.includes('/_next/')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          return response;
+        })
+        .catch(() => {
+          return caches.match(event.request);
+        })
+    );
+    return;
+  }
+
+  // Для статичних ресурсів (картинки, іконки) використовуємо Cache First
+  if (url.pathname.match(/\.(png|jpg|jpeg|svg|gif|ico)$/)) {
+    event.respondWith(
+      caches.match(event.request).then((response) => {
+        return response || fetch(event.request).then((fetchResponse) => {
+          return caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, fetchResponse.clone());
+            return fetchResponse;
+          });
+        });
+      })
+    );
+    return;
+  }
+
+  // Для всього іншого використовуємо Network First
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Клонуємо відповідь
-        const responseToCache = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseToCache);
-        });
         return response;
       })
       .catch(() => {
