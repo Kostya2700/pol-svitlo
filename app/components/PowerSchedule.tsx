@@ -10,22 +10,77 @@ export default function PowerSchedule() {
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [notificationStatus, setNotificationStatus] = useState<'default' | 'granted' | 'denied'>('default');
 
-  const fetchSchedule = async () => {
+  // Функція для відтворення звуку сповіщення
+  const playNotificationSound = () => {
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      // Налаштування звуку - приємний дзвіночок
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime); // Перша нота
+      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.1); // Друга нота
+
+      // Плавне затухання
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 0.5);
+
+      console.log('Звук сповіщення відтворено');
+    } catch (err) {
+      console.error('Помилка при відтворенні звуку:', err);
+    }
+  };
+
+const fetchSchedule = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/schedule');
-      if (!response.ok) throw new Error('Failed to fetch schedule');
+      console.log('Завантаження графіка...');
+
+      const response = await fetch('/api/schedule', {
+        cache: 'no-cache',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
+      console.log('Графік завантажено:', data);
 
       // Перевіряємо чи змінився графік
       if (schedule && JSON.stringify(schedule.queueSchedules) !== JSON.stringify(data.queueSchedules)) {
+        console.log('Графік змінився! Відправляємо сповіщення...');
+
         // Графік змінився - надсилаємо повідомлення
         if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('Графік відключень змінився!', {
-            body: 'Перевірте новий графік відключень електроенергії',
-            icon: '/icon-192x192.png',
-            badge: '/icon-192x192.png',
-          });
+          try {
+            // Перевіряємо чи Service Worker готовий
+            if ('serviceWorker' in navigator) {
+              await navigator.serviceWorker.ready;
+            }
+
+            // Відтворюємо звук
+            playNotificationSound();
+
+            new Notification('Графік відключень змінився!', {
+              body: 'Перевірте новий графік відключень електроенергії',
+              icon: '/icon-192x192.png',
+              badge: '/icon-192x192.png',
+              vibrate: [200, 100, 200],
+            });
+          } catch (notifErr) {
+            console.error('Помилка при відправці сповіщення про зміну графіка:', notifErr);
+          }
         }
       }
 
@@ -33,7 +88,8 @@ export default function PowerSchedule() {
       setLastUpdate(new Date());
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      console.error('Помилка при завантаженні графіка:', err);
+      setError(err instanceof Error ? err.message : 'Невідома помилка');
     } finally {
       setLoading(false);
     }
@@ -52,41 +108,86 @@ export default function PowerSchedule() {
     return () => clearInterval(interval);
   }, []);
 
-  const requestNotificationPermission = async () => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      const permission = await Notification.requestPermission();
-      setNotificationStatus(permission as 'default' | 'granted' | 'denied');
-      if (permission === 'granted') {
-        new Notification('Сповіщення увімкнені! ✅', {
-          body: 'Тепер ви отримуватимете повідомлення про зміни графіка',
-          icon: '/icon-192x192.png',
-          badge: '/icon-192x192.png',
-        });
+const requestNotificationPermission = async () => {
+    if (!('Notification' in window)) {
+      alert('❌ Ваш браузер не підтримує сповіщення');
+      return;
+    }
+
+    if (Notification.permission === 'default') {
+      try {
+        const permission = await Notification.requestPermission();
+        setNotificationStatus(permission as 'default' | 'granted' | 'denied');
+
+        if (permission === 'granted') {
+          // Перевіряємо чи Service Worker готовий
+          if ('serviceWorker' in navigator) {
+            await navigator.serviceWorker.ready;
+          }
+
+          // Відтворюємо звук
+          playNotificationSound();
+
+          new Notification('Сповіщення увімкнені! ✅', {
+            body: 'Тепер ви отримуватимете повідомлення про зміни графіка',
+            icon: '/icon-192x192.png',
+            badge: '/icon-192x192.png',
+          });
+        } else if (permission === 'denied') {
+          alert('❌ Сповіщення заблоковані.\n\nДля увімкнення:\n1. Натисніть на іконку замка 🔒 в адресному рядку\n2. Знайдіть "Сповіщення"\n3. Змініть на "Дозволити"\n4. Перезавантажте сторінку');
+        }
+      } catch (err) {
+        console.error('Помилка при запиті дозволу на сповіщення:', err);
+        alert('❌ Помилка при запиті дозволу на сповіщення. Спробуйте ще раз.');
       }
-    } else if ('Notification' in window && Notification.permission === 'denied') {
-      alert('❌ Сповіщення заблоковані.\n\n1. Натисніть на іконку замка 🔒 в адресному рядку\n2. Знайдіть "Сповіщення"\n3. Змініть на "Дозволити"\n4. Перезавантажте сторінку');
+    } else if (Notification.permission === 'denied') {
+      alert('❌ Сповіщення заблоковані.\n\nДля увімкнення:\n1. Натисніть на іконку замка 🔒 в адресному рядку\n2. Знайдіть "Сповіщення"\n3. Змініть на "Дозволити"\n4. Перезавантажте сторінку');
+    } else if (Notification.permission === 'granted') {
+      alert('✅ Сповіщення вже увімкнені!');
     }
   };
 
-  const testNotification = () => {
-    if ('Notification' in window && Notification.permission === 'granted') {
-      const notification = new Notification('Тестове сповіщення ✅', {
-        body: 'Якщо ви це бачите - сповіщення працюють правильно!',
-        icon: '/icon-192x192.png',
-        badge: '/icon-192x192.png',
-      });
+const testNotification = async () => {
+    if (!('Notification' in window)) {
+      alert('❌ Ваш браузер не підтримує сповіщення');
+      return;
+    }
 
-      // Вібрація для мобільних (якщо підтримується)
-      if ('vibrate' in navigator) {
-        navigator.vibrate([200, 100, 200]);
+    if (Notification.permission === 'granted') {
+      try {
+        // Перевіряємо чи Service Worker готовий
+        if ('serviceWorker' in navigator) {
+          await navigator.serviceWorker.ready;
+        }
+
+        // Відтворюємо звук ПЕРЕД показом сповіщення
+        playNotificationSound();
+
+        const notification = new Notification('Тестове сповіщення ✅', {
+          body: 'Якщо ви це бачите - сповіщення працюють правильно!',
+          icon: '/icon-192x192.png',
+          badge: '/icon-192x192.png',
+          vibrate: [200, 100, 200],
+          requireInteraction: false,
+        });
+
+        // Вібрація для мобільних (якщо підтримується)
+        if ('vibrate' in navigator) {
+          navigator.vibrate([200, 100, 200]);
+        }
+
+        // Автоматично закрити через 5 секунд
+        setTimeout(() => notification.close(), 5000);
+
+        console.log('Тестове сповіщення відправлено:', notification);
+      } catch (err) {
+        console.error('Помилка при відправці сповіщення:', err);
+        alert('❌ Помилка при відправці сповіщення. Перевірте консоль для деталей.');
       }
-
-      // Автоматично закрити через 5 секунд
-      setTimeout(() => notification.close(), 5000);
-    } else if ('Notification' in window && Notification.permission === 'default') {
-      alert('Спочатку натисніть кнопку "🔔 Увімкнути сповіщення"');
+    } else if (Notification.permission === 'default') {
+      alert('⚠️ Спочатку натисніть кнопку "🔔 Увімкнути сповіщення"');
     } else {
-      alert('Сповіщення заблоковані. Дозвольте їх у налаштуваннях браузера.');
+      alert('❌ Сповіщення заблоковані. Дозвольте їх у налаштуваннях браузера.');
     }
   };
 
@@ -139,16 +240,21 @@ export default function PowerSchedule() {
             <p className="text-sm sm:text-base text-gray-600 whitespace-pre-wrap">{schedule.description}</p>
           </div>
 
-          <div className="flex gap-2 sm:gap-4 mb-3 sm:mb-4 flex-col sm:flex-row">
+<div className="flex gap-2 sm:gap-4 mb-3 sm:mb-4 flex-col sm:flex-row">
             <button
-              onClick={requestNotificationPermission}
+              onClick={(e) => {
+                e.preventDefault();
+                console.log('Кнопка "Увімкнути сповіщення" натиснута');
+                requestNotificationPermission();
+              }}
+              type="button"
               className={`${
                 notificationStatus === 'granted'
-                  ? 'bg-green-600 hover:bg-green-700'
+                  ? 'bg-green-600 hover:bg-green-700 active:bg-green-800'
                   : notificationStatus === 'denied'
-                  ? 'bg-red-600 hover:bg-red-700'
-                  : 'bg-blue-600 hover:bg-blue-700'
-              } text-white px-4 py-3 sm:py-2 rounded-lg transition shadow-md font-medium text-sm sm:text-base`}
+                  ? 'bg-red-600 hover:bg-red-700 active:bg-red-800'
+                  : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800'
+              } text-white px-4 py-3 sm:py-2 rounded-lg transition shadow-md font-medium text-sm sm:text-base cursor-pointer touch-manipulation active:scale-95`}
             >
               {notificationStatus === 'granted'
                 ? '✅ Сповіщення увімкнені'
@@ -157,10 +263,18 @@ export default function PowerSchedule() {
                 : '🔔 Увімкнути сповіщення'}
             </button>
             <button
-              onClick={fetchSchedule}
-              className="bg-green-600 text-white px-4 py-3 sm:py-2 rounded-lg hover:bg-green-700 transition shadow-md font-medium text-sm sm:text-base"
+              onClick={(e) => {
+                e.preventDefault();
+                console.log('Кнопка "Оновити зараз" натиснута');
+                fetchSchedule();
+              }}
+              type="button"
+              disabled={loading}
+              className={`${
+                loading ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700 active:bg-green-800'
+              } text-white px-4 py-3 sm:py-2 rounded-lg transition shadow-md font-medium text-sm sm:text-base cursor-pointer touch-manipulation active:scale-95 disabled:cursor-not-allowed`}
             >
-              🔄 Оновити зараз
+              {loading ? '⏳ Оновлення...' : '🔄 Оновити зараз'}
             </button>
           </div>
 
@@ -273,9 +387,14 @@ export default function PowerSchedule() {
               <p className="text-xs sm:text-sm text-gray-600 mb-3">
                 ✅ Сповіщення увімкнені! Натисніть кнопку нижче для тесту:
               </p>
-              <button
-                onClick={testNotification}
-                className="w-full bg-purple-600 text-white px-4 py-3 sm:py-2 rounded-lg hover:bg-purple-700 transition shadow-md font-medium text-sm sm:text-base"
+<button
+                onClick={(e) => {
+                  e.preventDefault();
+                  console.log('Кнопка "Надіслати тестове сповіщення" натиснута');
+                  testNotification();
+                }}
+                type="button"
+                className="w-full bg-purple-600 text-white px-4 py-3 sm:py-2 rounded-lg hover:bg-purple-700 active:bg-purple-800 transition shadow-md font-medium text-sm sm:text-base cursor-pointer touch-manipulation active:scale-95"
               >
                 🔔 Надіслати тестове сповіщення
               </button>
@@ -290,8 +409,12 @@ export default function PowerSchedule() {
                 <li>Дозвольте сповіщення в діалозі браузера</li>
                 <li>Потім повертайтесь сюди і натискайте тестову кнопку</li>
               </ol>
-              <button
-                onClick={testNotification}
+<button
+                onClick={(e) => {
+                  e.preventDefault();
+                  testNotification();
+                }}
+                type="button"
                 className="w-full bg-gray-400 text-white px-4 py-3 sm:py-2 rounded-lg cursor-not-allowed shadow-md font-medium text-sm sm:text-base"
                 disabled
               >

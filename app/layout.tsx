@@ -44,18 +44,28 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
-        <script dangerouslySetInnerHTML={{
+<script dangerouslySetInnerHTML={{
           __html: `
             if ('serviceWorker' in navigator) {
               window.addEventListener('load', function() {
-                navigator.serviceWorker.register('/sw.js').then(
+                navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(
                   function(registration) {
-                    console.log('ServiceWorker registration successful');
+                    console.log('ServiceWorker registration successful with scope:', registration.scope);
+
+                    // Додаємо обробник оновлень
+                    registration.addEventListener('updatefound', () => {
+                      console.log('Service Worker update found!');
+                    });
                   },
                   function(err) {
-                    console.log('ServiceWorker registration failed: ', err);
+                    console.error('ServiceWorker registration failed:', err);
                   }
                 );
+
+                // Перевіряємо готовність Service Worker
+                navigator.serviceWorker.ready.then(function(registration) {
+                  console.log('Service Worker is ready:', registration);
+                });
               });
             }
           `
