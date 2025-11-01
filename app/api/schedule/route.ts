@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
+export const runtime = 'nodejs';
+
 
 export interface TimeSlot {
   start: string;
@@ -148,18 +150,22 @@ export async function GET() {
     console.log('[API] Environment:', process.env.VERCEL ? 'Vercel' : 'Local');
     console.log('[API] Vercel Region:', process.env.VERCEL_REGION || 'N/A');
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 200000); // 20 секунд для всіх спроб
+  const controller = new AbortController();
+const timeoutId = setTimeout(() => controller.abort(), 9000); // 9 сек
 
-    const url = 'https://www.poe.pl.ua/customs/dynamicgpv-info.php';
-    const options: RequestInit = {
-      cache: 'no-store',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'uk-UA,uk;q=0.9,en;q=0.8',
-      },
-    };
+const url = 'https://api.codetabs.com/v1/proxy?quest=https://www.poe.pl.ua/customs/dynamicgpv-info.php';
+const options: RequestInit = {
+  headers:{
+    'Accept': 'application/json, text/javascript, */*; q=0.01',
+    'Accept-Language': 'uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
+    'Referer': 'https://www.poe.pl.ua/',
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+    'X-Requested-With': 'XMLHttpRequest'
+  }
+};
+
 
     const response = await fetchWithFallback(url, options, controller.signal);
     clearTimeout(timeoutId);
