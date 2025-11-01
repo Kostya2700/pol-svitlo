@@ -149,7 +149,7 @@ export async function GET() {
     console.log('[API] Vercel Region:', process.env.VERCEL_REGION || 'N/A');
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 секунд для всіх спроб
+    const timeoutId = setTimeout(() => controller.abort(), 200000); // 20 секунд для всіх спроб
 
     const url = 'https://www.poe.pl.ua/customs/dynamicgpv-info.php';
     const options: RequestInit = {
