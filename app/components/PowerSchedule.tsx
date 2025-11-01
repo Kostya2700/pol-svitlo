@@ -185,23 +185,62 @@ export default function PowerSchedule() {
 
       const data = parseScheduleData(html);
 
-      // Перевіряємо чи змінився графік
-      if (schedule && JSON.stringify(schedule.queueSchedules) !== JSON.stringify(data.queueSchedules)) {
-        console.log('🔔 Графік змінився! Відправляємо сповіщення...');
-
-        if ('Notification' in window && Notification.permission === 'granted') {
-          try {
-            playNotificationSound();
-
-            new Notification('⚡ Графік відключень змінився!', {
-              body: 'Перевірте новий графік відключень електроенергії',
-              icon: '/icon-192x192.png',
-              badge: '/icon-192x192.png',
-            } as NotificationOptions);
-          } catch (notifErr) {
-            console.error('Помилка при відправці сповіщення:', notifErr);
-          }
+      // Завантажуємо попередній графік з localStorage
+      let previousSchedule: ScheduleData | null = null;
+      try {
+        const stored = localStorage.getItem('powerSchedule');
+        if (stored) {
+          previousSchedule = JSON.parse(stored);
+          console.log('📂 Завантажено попередній графік з localStorage');
         }
+      } catch (err) {
+        console.error('Помилка читання localStorage:', err);
+      }
+
+      // Перевіряємо чи змінився графік
+      let scheduleChanged = false;
+      if (previousSchedule) {
+        const oldScheduleStr = JSON.stringify(previousSchedule.queueSchedules);
+        const newScheduleStr = JSON.stringify(data.queueSchedules);
+        
+        if (oldScheduleStr !== newScheduleStr) {
+          scheduleChanged = true;
+          console.log('🔔 Графік змінився! Відправляємо сповіщення...');
+
+          if ('Notification' in window && Notification.permission === 'granted') {
+            try {
+              playNotificationSound();
+
+              const notification = new Notification('⚡ Графік відключень змінився!', {
+                body: `Оновлено: ${data.date}\nПеревірте новий графік відключень електроенергії`,
+                icon: '/icon-192x192.png',
+                badge: '/icon-192x192.png',
+                tag: 'schedule-update',
+                requireInteraction: true,
+              } as NotificationOptions);
+
+              // Закрити сповіщення через 10 секунд
+              setTimeout(() => notification.close(), 10000);
+            } catch (notifErr) {
+              console.error('Помилка при відправці сповіщення:', notifErr);
+            }
+          } else {
+            console.log('⚠️ Сповіщення не увімкнені, але графік змінився!');
+          }
+        } else {
+          console.log('✅ Графік не змінився');
+        }
+      } else {
+        console.log('📌 Перше завантаження графіка - збереження в localStorage');
+      }
+
+      // Зберігаємо новий графік в localStorage
+      try {
+        localStorage.setItem('powerSchedule', JSON.stringify(data));
+        localStorage.setItem('powerScheduleLastUpdate', new Date().toISOString());
+        console.log('💾 Графік збережено в localStorage');
+      } catch (err) {
+        console.error('Помилка запису в localStorage:', err);
       }
 
       setSchedule(data);
@@ -220,7 +259,32 @@ export default function PowerSchedule() {
 
   // ===== Автооновлення кожні 10 хвилин =====
   useEffect(() => {
-    // Перше завантаження
+    // Спроба завантажити збережений графік при старті
+    const loadSavedSchedule = () => {
+      try {
+        const stored = localStorage.getItem('powerSchedule');
+        const lastUpdate = localStorage.getItem('powerScheduleLastUpdate');
+        
+        if (stored) {
+          const savedSchedule = JSON.parse(stored);
+          setSchedule(savedSchedule);
+          console.log('📂 Завантажено збережений графік з localStorage');
+          
+          if (lastUpdate) {
+            const lastUpdateDate = new Date(lastUpdate);
+            setLastUpdate(lastUpdateDate);
+            console.log('🕐 Останнє оновлення було:', lastUpdateDate.toLocaleString('uk-UA'));
+          }
+        }
+      } catch (err) {
+        console.error('Помилка завантаження збереженого графіка:', err);
+      }
+    };
+
+    // Завантажуємо збережений графік перед першим запитом
+    loadSavedSchedule();
+
+    // Перше завантаження з сервера
     fetchSchedule();
 
     // Інтервал оновлення кожні 10 хвилин
@@ -451,6 +515,31 @@ export default function PowerSchedule() {
 
           <div className="overflow-x-auto -mx-2 sm:mx-0">
             <div className="min-w-[800px] px-2">
+              {/* Рядок з годинами */}
+              <div className="mb-4 bg-gradient-to-r from-blue-50 to-indigo-50 p-3 rounded-lg border-2 border-blue-300 shadow-sm">
+                <div className="font-bold text-sm sm:text-base mb-2 text-gray-800 text-center">
+                  ⏰ Години доби
+                </div>
+                <div className="grid grid-cols-24 gap-0.5 sm:gap-1">
+                  {Array.from({ length: 24 }, (_, hour) => {
+                    const isCurrentHour = hour === currentHour;
+                    const nextHour = (hour + 1) % 24;
+                    return (
+                      <div
+                        key={hour}
+                        className={`text-center flex flex-col p-1 sm:p-2 rounded font-bold text-[10px] sm:text-xs ${
+                          isCurrentHour
+                            ? 'bg-blue-600 text-white shadow-md scale-105'
+                            : 'bg-white text-gray-700 border border-gray-300'
+                        } transition-transform`}
+                      >
+                        {hour.toString().padStart(2, '0')}<span>-</span>{nextHour.toString().padStart(2, '0')}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               {schedule.queueSchedules.map((qs, qsIndex) => (
                 <div key={qsIndex} className="mb-4 sm:mb-6 bg-gray-50 p-2 sm:p-3 rounded-lg border border-gray-200">
                   <div className="font-bold text-base sm:text-lg mb-2 sm:mb-3 text-gray-800 bg-white px-3 py-2 rounded-lg shadow-sm border-l-4 border-blue-500">
@@ -461,24 +550,14 @@ export default function PowerSchedule() {
                       const isCurrentHour = hour === currentHour;
                       return (
                         <div key={hour} className="space-y-0.5 sm:space-y-1">
-                          <div className={`text-[10px] sm:text-xs text-center font-bold mb-1 px-0.5 py-0.5 rounded ${
-                            isCurrentHour ? 'bg-blue-600 text-white' : 'text-gray-700'
-                          }`}>
-                            {hour.toString().padStart(2, '0')}
-                          </div>
                           <div className="flex flex-col gap-0.5 sm:gap-1">
                             {[0, 1].map((halfHour) => {
-                              // Масив hours має 48 елементів (по 2 на годину)
-                              // hour=9, halfHour=0 -> idx=18 (09:00-09:30)
-                              // hour=9, halfHour=1 -> idx=19 (09:30-10:00)
                               const idx = hour * 2 + halfHour;
                               const className = qs.hours[idx] || '';
                               
-                              // Час початку проміжку
                               const startHour = hour;
                               const startMin = halfHour * 30;
                               
-                              // Час кінця проміжку
                               const endMin = (halfHour + 1) * 30;
                               const endHour = endMin >= 60 ? hour + 1 : hour;
                               const endMinDisplay = endMin >= 60 ? 0 : endMin;
