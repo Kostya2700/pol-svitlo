@@ -129,6 +129,7 @@ export default function PowerSchedule() {
   // ===== Звук сповіщення =====
   const playNotificationSound = () => {
     try {
+      //eslint-disable-next-line @typescript-eslint/no-explicit-any
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
@@ -151,7 +152,7 @@ export default function PowerSchedule() {
   };
 
   // ===== Завантаження графіка =====
-  const fetchSchedule = async () => {
+  const fetchSchedule = async (isInitialLoad = false) => {
     try {
       setLoading(true);
       console.log('🔄 Завантаження графіка з poe.pl.ua...');
@@ -197,12 +198,12 @@ export default function PowerSchedule() {
         console.error('Помилка читання localStorage:', err);
       }
 
-      // Перевіряємо чи змінився графік
+      // Перевіряємо чи змінився графік (тільки якщо це НЕ перше завантаження при старті)
       let scheduleChanged = false;
-      if (previousSchedule) {
+      if (previousSchedule && !isInitialLoad) {
         const oldScheduleStr = JSON.stringify(previousSchedule.queueSchedules);
         const newScheduleStr = JSON.stringify(data.queueSchedules);
-        
+
         if (oldScheduleStr !== newScheduleStr) {
           scheduleChanged = true;
           console.log('🔔 Графік змінився! Відправляємо сповіщення...');
@@ -230,6 +231,8 @@ export default function PowerSchedule() {
         } else {
           console.log('✅ Графік не змінився');
         }
+      } else if (isInitialLoad) {
+        console.log('📌 Перше завантаження при старті - пропускаємо перевірку на зміни');
       } else {
         console.log('📌 Перше завантаження графіка - збереження в localStorage');
       }
@@ -247,7 +250,7 @@ export default function PowerSchedule() {
       setLastUpdate(new Date());
       setNextUpdateIn(600); // Скидаємо таймер на 10 хвилин
       setError(null);
-      
+
       console.log('✅ Графік успішно оновлено');
     } catch (err) {
       console.error('❌ Помилка при завантаженні:', err);
@@ -284,13 +287,13 @@ export default function PowerSchedule() {
     // Завантажуємо збережений графік перед першим запитом
     loadSavedSchedule();
 
-    // Перше завантаження з сервера
-    fetchSchedule();
+    // Перше завантаження з сервера (з прапорцем isInitialLoad)
+    fetchSchedule(true);
 
     // Інтервал оновлення кожні 10 хвилин
     intervalRef.current = setInterval(() => {
       console.log('⏰ Автооновлення графіка (10 хвилин минуло)');
-      fetchSchedule();
+      fetchSchedule(false);
     }, 10 * 60 * 1000);
 
     // Зворотний відлік до наступного оновлення
@@ -448,7 +451,7 @@ export default function PowerSchedule() {
                 : '🔔 Увімкнути сповіщення'}
             </button>
             <button
-              onClick={fetchSchedule}
+              onClick={() => fetchSchedule(false)}
               type="button"
               disabled={loading}
               className={`${
@@ -545,6 +548,29 @@ export default function PowerSchedule() {
                   <div className="font-bold text-base sm:text-lg mb-2 sm:mb-3 text-gray-800 bg-white px-3 py-2 rounded-lg shadow-sm border-l-4 border-blue-500">
                     Черга {qs.queue}.{qs.subqueue}
                   </div>
+
+                  {/* Рядок з годинами для кожної черги */}
+                  <div className="mb-2 bg-gradient-to-r from-blue-50 to-indigo-50 p-2 rounded-lg border border-blue-200">
+                    <div className="grid grid-cols-24 gap-0.5 sm:gap-1">
+                      {Array.from({ length: 24 }, (_, hour) => {
+                        const isCurrentHour = hour === currentHour;
+                        const nextHour = (hour + 1) % 24;
+                        return (
+                          <div
+                            key={hour}
+                            className={`text-center flex flex-col p-1 rounded font-bold text-[9px] sm:text-[10px] ${
+                              isCurrentHour
+                                ? 'bg-blue-600 text-white shadow-md scale-105'
+                                : 'bg-white text-gray-700 border border-gray-300'
+                            } transition-transform`}
+                          >
+                            {hour.toString().padStart(2, '0')}<span className="text-[8px]">-</span>{nextHour.toString().padStart(2, '0')}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-24 gap-0.5 sm:gap-1">
                     {Array.from({ length: 24 }, (_, hour) => {
                       const isCurrentHour = hour === currentHour;
